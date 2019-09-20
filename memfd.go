@@ -8,6 +8,12 @@ import (
 	"unsafe"
 )
 
+// AKA Fileless execution
+
+// NOTE: Some syscalls return syscall.Errno object with Error() method
+
+// syscall.Kill(cmd.Process.Pid, syscall.SIGCONT)
+
 var errTooBig = errors.New("[error] memfd too large for slice")
 
 const maxint int64 = int64(^uint(0) >> 1)
@@ -40,6 +46,52 @@ func (self *MemFD) Info() (os.FileInfo, error) {
 	return os.Lstat(self.Path())
 }
 
-func (self *MemFD) Exec(arguments string) error {
-	return syscall.Exec(self.Path(), []string{self.Name(), arguments}, nil)
+// Readlink returns the destination of the named symbolic link.
+func Readlink(path string, buf []byte) (n int, err error) {
+	return syscall.Readlink(path, buf)
+}
+
+func (self *MemFD) Execute(arguments ...string) (int, uintptr, error) {
+	wd, _ := os.Getwd()
+	//user, _ := user.Current()
+	//uid, _ := strconv.Atoi(user.Uid)
+	//guid, _ := strconv.Atoi(user.Gid)
+
+	//var tempFile os.File
+	//baseCmd.SetExtraFiles([]*os.File{&tempFile})
+
+	procAttr := &syscall.ProcAttr{
+		Dir: wd,
+		Files: []uintptr{
+			os.Stdin.Fd(),
+			os.Stdout.Fd(),
+			os.Stderr.Fd(),
+		},
+		Env: os.Environ(),
+		Sys: &syscall.SysProcAttr{
+			//Chroot: "", // Chroot: Could create a tmpfs and chroot into that so everything is in memory
+			//Credential: &syscall.Credential{
+			//	Uid:    1000,
+			//	Gid:    1000,
+			//	Groups: []uint32{1000},
+			//}, // Credential
+			Ptrace:  false, // Enable tracing
+			Setsid:  true,  // Create session
+			Setpgid: false, // Set process group ID to new pid (SYSV setpgrp)
+			Setctty: false, // Set controlling terminal to fd 0
+			Noctty:  false, // Detach fd 0 from controlling terminal
+		},
+	}
+
+	// NOTE: Using this type of execution means that anything after this is NOT ran in this software, because
+	// the process is replaced with this new process. This is why putting fmt.Print commands after the exec
+	// call here does not print.
+	//err := syscall.Exec(self.Path(), []string{self.Name(), arguments}, os.Environ())
+
+	return self.ExecuteWithAttributes(procAttr, arguments...)
+	// pid, handle, error
+}
+
+func (self *MemFD) ExecuteWithAttributes(procAttr *syscall.ProcAttr, arguments ...string) (int, uintptr, error) {
+	return syscall.StartProcess(self.Path(), append([]string{self.Name(), " "}, arguments...), procAttr)
 }
