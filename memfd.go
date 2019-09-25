@@ -9,9 +9,7 @@ import (
 )
 
 // AKA Fileless execution
-
 // NOTE: Some syscalls return syscall.Errno object with Error() method
-
 // syscall.Kill(cmd.Process.Pid, syscall.SIGCONT)
 
 var errTooBig = errors.New("[error] memfd too large for slice")
@@ -52,7 +50,6 @@ func Readlink(path string, buf []byte) (n int, err error) {
 }
 
 func (self *MemFD) Execute(arguments ...string) (int, uintptr, error) {
-	wd, _ := os.Getwd()
 	//user, _ := user.Current()
 	//uid, _ := strconv.Atoi(user.Uid)
 	//guid, _ := strconv.Atoi(user.Gid)
@@ -60,6 +57,7 @@ func (self *MemFD) Execute(arguments ...string) (int, uintptr, error) {
 	//var tempFile os.File
 	//baseCmd.SetExtraFiles([]*os.File{&tempFile})
 
+	wd, _ := os.Getwd()
 	procAttr := &syscall.ProcAttr{
 		Dir: wd,
 		Files: []uintptr{
@@ -82,16 +80,21 @@ func (self *MemFD) Execute(arguments ...string) (int, uintptr, error) {
 			Noctty:  false, // Detach fd 0 from controlling terminal
 		},
 	}
+	//return syscall.StartProcess(self.Path(), append([]string{self.Name(), " "}, arguments...), procAttr)
 
+	// NOTE: This works, using system 'echo', and this, the extra quotes MUST be
+	// ommited
+	//command := []string{self.Name(), "-e", "p 'echo test'"}
+	//command := []string{self.Name(), "-e", "system 'echo test'"}
 	// NOTE: Using this type of execution means that anything after this is NOT ran in this software, because
 	// the process is replaced with this new process. This is why putting fmt.Print commands after the exec
 	// call here does not print.
-	//err := syscall.Exec(self.Path(), []string{self.Name(), arguments}, os.Environ())
+	//return syscall.Exec(self.Path(), append([]string{self.Name()}, arguments), os.Environ())
 
 	return self.ExecuteWithAttributes(procAttr, arguments...)
 	// pid, handle, error
 }
 
 func (self *MemFD) ExecuteWithAttributes(procAttr *syscall.ProcAttr, arguments ...string) (int, uintptr, error) {
-	return syscall.StartProcess(self.Path(), append([]string{self.Name(), " "}, arguments...), procAttr)
+	return syscall.StartProcess(self.Path(), append([]string{self.Name()}, arguments...), procAttr)
 }
